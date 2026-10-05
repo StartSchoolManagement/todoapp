@@ -8,7 +8,7 @@
 | Phase | Status | Completed |
 |-------|--------|-----------|
 | 1. Scaffold & tooling | ✅ Done | 2026-10-05 |
-| 2. Supabase project & schema | ⬜ Not started | |
+| 2. Supabase project & schema | ✅ Done (2 manual steps pending, see below) | 2026-10-05 |
 | 3. Auth | ⬜ Not started | |
 | 4. Core todo CRUD | ⬜ Not started | |
 | 5. Polish | ⬜ Not started | |
@@ -171,7 +171,8 @@ Each phase ends in a working, runnable state. Don't start the next until the che
 
 ---
 
-### Phase 2 — Supabase project & schema
+### Phase 2 — Supabase project & schema ✅ DONE (2026-10-05)
+
 **Goal:** database exists, RLS enforced, types generated.
 
 1. Create Supabase project (cloud) or `supabase init && supabase start` for local. Recommendation: **cloud project from day one**, link with `supabase link`, so there is one source of truth and no Docker dependency.
@@ -182,6 +183,21 @@ Each phase ends in a working, runnable state. Don't start the next until the che
 6. Fill the local env file with the project URL and anon key.
 
 **Checkpoint:** In SQL editor, inserting a row with a bogus `user_id` as anon fails with an RLS error. `database.ts` contains a `todos` type.
+
+**Outcome:** Checkpoint passed. Inserting with a bogus `user_id` as both `anon` and `authenticated` roles fails with `42501: new row violates row-level security policy`. `src/lib/types/database.ts` exports `Database`, plus `Todo`, `TodoInsert`, `TodoUpdate` aliases. Security advisors: 0 findings. Performance advisors: only the expected "unused index" info on an empty table.
+
+**What actually shipped (deviations from the steps above):**
+
+- **Project:** Elias created it manually. Ref `slinlpwthklbppavanpw`, name "TODO", region eu-west-1, Postgres 17. URL `https://slinlpwthklbppavanpw.supabase.co`.
+- **No `supabase link` / `db push`.** Migrations were applied through the Supabase MCP connector (`apply_migration`), which also records them in the project's migration history. The CLI is still installed for later use; `supabase/config.toml` was not generated because nothing needs it yet.
+- **Two migrations, not one.** `0001_todos.sql` is the schema from section 2 with two hardening tweaks: policies scoped `to authenticated`, and the trigger function has `security invoker` + `set search_path = ''`. `0002_rls_initplan.sql` rewrites the four policies to use `(select auth.uid())`, which the Supabase performance linter flagged; it makes Postgres evaluate the auth call once per query instead of once per row. Section 2's SQL above is the original; the migration files are authoritative.
+- **Types generated via MCP** (`generate_typescript_types`), not the CLI. Same output.
+- **Env var renamed:** `.env.example` now uses `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` with the `sb_publishable_...` key. Supabase recommends it over the legacy JWT anon key for new apps and `@supabase/ssr` 0.12 accepts it. Phase 3's client code must read this name.
+
+**Manual steps still pending (Elias, dashboard):**
+
+1. **Create `.env.local`** in the repo root. Claude's guard hook blocks writing env files, by design. Contents are in the Phase 2 handoff message; the publishable key is also visible in the dashboard under Project Settings → API Keys.
+2. **Auth → Providers → Email → turn off "Confirm email"** for development. Nothing in the MCP connector can change auth settings. Re-enable in Phase 6. Phase 3 will still build the callback route so re-enabling is a toggle, not code.
 
 ---
 
