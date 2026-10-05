@@ -66,6 +66,16 @@ export async function updateTodo(id: string, input: TodoFields): Promise<ActionR
   return {};
 }
 
+export async function clearCompleted(): Promise<ActionResult> {
+  const { supabase } = await requireUserId();
+  // RLS limits this to the caller's rows.
+  const { error } = await supabase.from("todos").delete().eq("is_done", true);
+
+  if (error) return { error: GENERIC_ERROR };
+  revalidatePath("/");
+  return {};
+}
+
 export async function deleteTodo(id: string): Promise<ActionResult> {
   const parsedId = todoIdSchema.safeParse(id);
   if (!parsedId.success) return { error: parsedId.error.issues[0]?.message };

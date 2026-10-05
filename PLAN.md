@@ -11,7 +11,7 @@
 | 2. Supabase project & schema | ✅ Done | 2026-10-05 |
 | 3. Auth | ✅ Done | 2026-10-05 |
 | 4. Core todo CRUD | ✅ Done | 2026-10-05 |
-| 5. Polish | ⬜ Not started | |
+| 5. Polish | ✅ Done | 2026-10-05 |
 | 6. Hardening & deploy | ⬜ Not started | |
 
 ---
@@ -262,7 +262,8 @@ Each phase ends in a working, runnable state. Don't start the next until the che
 
 ---
 
-### Phase 5 — Polish
+### Phase 5 — Polish ✅ DONE (2026-10-05)
+
 **Goal:** feels finished, not a demo.
 
 1. **Filters:** All / Active / Completed via URL search param (`?filter=active`) so it's server-rendered and shareable. No client state for this.
@@ -275,6 +276,20 @@ Each phase ends in a working, runnable state. Don't start the next until the che
 8. **Clear completed** bulk action.
 
 **Checkpoint:** Lighthouse accessibility ≥ 95. Works on a phone.
+
+**Outcome:** Checkpoint passed. Lighthouse accessibility on `/login` = **100**, no failing audits (mobile emulation, headless Chrome). Filters switch via URL and the "items left" counter stays global. Clear completed removed the done item and the Completed tab showed its own empty state. Dark mode toggled from the header. At a true 360px viewport (same-origin iframe, since the test window could not be shrunk) the header, tabs, input row and list fit with no horizontal scroll and the email hides. `build`, `typecheck`, `lint` green.
+
+**What actually shipped (deviations from the steps above):**
+
+- **Filtering is applied client-side on the full list**, not in the SQL query. The page always fetches all of the user's todos and `applyFilter()` narrows the visible set from the `filter` prop. This keeps the counter and the Clear-completed count correct in every view and keeps optimistic updates consistent. `parseFilter()` normalises unknown values to `all`. Lists are small; revisit if that stops being true.
+- **`FilterTabs`** is a `<nav aria-label="Filter todos">` of `<Link>`s with `aria-current="page"` on the active one. Server-rendered, shareable, keyboard-reachable.
+- **`clearCompleted()`** server action deletes `where is_done = true`; RLS scopes it to the caller. Optimistic reducer case added.
+- **Empty state is filter-aware**: different copy for All / Active / Completed; "All caught up" when every todo is done.
+- **Dark mode:** `<ThemeProvider attribute="class" defaultTheme="system" enableSystem>` in the root layout with `suppressHydrationWarning` on `<html>`. The toggle renders both Sun and Moon icons and lets CSS (`dark:hidden` / `dark:block`) pick, so there is no mounted-state flicker.
+- **Metadata:** title template `%s · Todo`; page titles trimmed to "Sign in" / "Create account". `viewport.themeColor` set per colour scheme. Default `favicon.ico` replaced by `src/app/icon.svg` (checkmark tile), served via Next's icon file convention.
+- **`loading.tsx` / `error.tsx`** under `(app)` as planned; error boundary logs to console and shows the digest when present.
+- **Lighthouse ran only on `/login`.** The authenticated page needs a session cookie that the Lighthouse CLI doesn't have; it shares every component and pattern with the audited page, but it was not scored directly.
+- **Not done, deliberately:** undo-toast for delete (noted in Phase 4), keyboard shortcut to focus the input, animations.
 
 ---
 

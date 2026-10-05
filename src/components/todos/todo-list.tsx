@@ -2,19 +2,30 @@
 
 import { useOptimistic, useTransition } from "react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { AddTodoForm } from "@/components/todos/add-todo-form";
 import { EmptyState } from "@/components/todos/empty-state";
+import { FilterTabs } from "@/components/todos/filter-tabs";
 import { TodoItem } from "@/components/todos/todo-item";
-import { createTodo, deleteTodo, toggleTodo, updateTodo, type ActionResult } from "@/lib/todos/actions";
-import { sortTodos } from "@/lib/todos/sort";
+import {
+  clearCompleted,
+  createTodo,
+  deleteTodo,
+  toggleTodo,
+  updateTodo,
+  type ActionResult,
+} from "@/lib/todos/actions";
+import { applyFilter, type TodoFilter } from "@/lib/todos/filter";
 import type { TodoFields } from "@/lib/todos/schema";
+import { sortTodos } from "@/lib/todos/sort";
 import type { Todo } from "@/lib/types/database";
 
 type OptimisticAction =
   | { type: "add"; todo: Todo }
   | { type: "toggle"; id: string; isDone: boolean }
   | { type: "update"; id: string; fields: TodoFields }
-  | { type: "delete"; id: string };
+  | { type: "delete"; id: string }
+  | { type: "clearCompleted" };
 
 function reducer(state: Todo[], action: OptimisticAction): Todo[] {
   switch (action.type) {
@@ -35,10 +46,18 @@ function reducer(state: Todo[], action: OptimisticAction): Todo[] {
       );
     case "delete":
       return state.filter((t) => t.id !== action.id);
+    case "clearCompleted":
+      return state.filter((t) => !t.is_done);
   }
 }
 
-export function TodoList({ initialTodos, userId }: { initialTodos: Todo[]; userId: string }) {
+type Props = {
+  initialTodos: Todo[];
+  userId: string;
+  filter: TodoFilter;
+};
+
+export function TodoList({ initialTodos, userId, filter }: Props) {
   const [todos, apply] = useOptimistic(initialTodos, reducer);
   const [pending, startTransition] = useTransition();
 
@@ -74,33 +93,47 @@ export function TodoList({ initialTodos, userId }: { initialTodos: Todo[]; userI
 
   const handleDelete = (id: string) => run({ type: "delete", id }, () => deleteTodo(id));
 
+  const handleClearCompleted = () => run({ type: "clearCompleted" }, clearCompleted);
+
+  const visible = applyFilter(todos, filter);
   const remaining = todos.filter((t) => !t.is_done).length;
+  const completed = todos.length - remaining;
 
   return (
     <div className="flex flex-col gap-4">
       <AddTodoForm onAdd={handleAdd} pending={pending} />
 
-      {todos.length === 0 ? (
-        <EmptyState />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <FilterTabs current={filter} />
+        {completed > 0 && (
+          <Button variant="ghost" size="sm" onClick={handleClearCompleted} disabled={pending}>
+            Clear completed ({completed})
+          </Button>
+        )}
+      </div>
+
+      {visible.length === 0 ? (
+        <EmptyState filter={todos.length === 0 ? "all" : filter} />
       ) : (
-        <>
-          <ul className="flex flex-col gap-2" data-pending={pending ? "" : undefined}>
-            {todos.map((todo) => (
-              <TodoItem
-                key={todo.id}
-                todo={todo}
-                onToggle={handleToggle}
-                onUpdate={handleUpdate}
-                onDelete={handleDelete}
-              />
-            ))}
-          </ul>
-          <p className="text-xs text-muted-foreground">
-            {remaining === 0
-              ? "All done."
-              : `${remaining} ${remaining === 1 ? "item" : "items"} left`}
-          </p>
-        </>
+        <ul className="flex flex-col gap-2" data-pending={pending ? "" : undefined}>
+          {visible.map((todo) => (
+            <TodoItem
+              key={todo.id}
+              todo={todo}
+              onToggle={handleToggle}
+              onUpdate={handleUpdate}
+              onDelete={handleDelete}
+            />
+          ))}
+        </ul>
+      )}
+
+      {todos.length > 0 && (
+        <p className="text-xs text-muted-foreground" aria-live="polite">
+          {remaining === 0
+            ? "All done."
+            : `${remaining} ${remaining === 1 ? "item" : "items"} left`}
+        </p>
       )}
     </div>
   );
