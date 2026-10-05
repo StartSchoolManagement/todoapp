@@ -10,5 +10,9 @@ const ERROR_MESSAGES: Record<string, string> = {
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const { error } = await searchParams;
   const code = typeof error === "string" ? error : undefined;
-  return <LoginForm initialError={code ? ERROR_MESSAGES[code] : undefined} />;
+  return (
+    <main className="flex flex-1 flex-col items-center justify-center bg-green-100 p-4 dark:bg-green-950">
+      <LoginForm initialError={code ? ERROR_MESSAGES[code] : undefined} />
+    </main>
+  );
 }

@@ -42,19 +42,23 @@ export async function updateSession(request: NextRequest) {
   const isAuthenticated = Boolean(data?.claims);
   const { pathname } = request.nextUrl;
 
-  if (!isAuthenticated && !isPublicPath(pathname)) {
+  /**
+   * getClaims() may have refreshed the token, and those Set-Cookie headers live on
+   * supabaseResponse. A redirect is a new response, so copy them across or the
+   * browser keeps the stale token and the user gets signed out on the next hop.
+   */
+  function redirectTo(path: string) {
     const url = request.nextUrl.clone();
-    url.pathname = "/login";
+    url.pathname = path;
     url.search = "";
-    return NextResponse.redirect(url);
+    const res = NextResponse.redirect(url);
+    supabaseResponse.cookies.getAll().forEach((c) => res.cookies.set(c));
+    res.headers.set("Cache-Control", "private, no-store");
+    return res;
   }
 
-  if (isAuthenticated && (pathname === "/login" || pathname === "/signup")) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/";
-    url.search = "";
-    return NextResponse.redirect(url);
-  }
+  if (!isAuthenticated && !isPublicPath(pathname)) return redirectTo("/login");
+  if (isAuthenticated && (pathname === "/login" || pathname === "/signup")) return redirectTo("/");
 
   // Refreshed tokens ride on Set-Cookie; never let a CDN cache them.
   supabaseResponse.headers.set("Cache-Control", "private, no-store");

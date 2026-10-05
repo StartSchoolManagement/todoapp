@@ -10,7 +10,7 @@
 | 1. Scaffold & tooling | ✅ Done | 2026-10-05 |
 | 2. Supabase project & schema | ✅ Done | 2026-10-05 |
 | 3. Auth | ✅ Done | 2026-10-05 |
-| 4. Core todo CRUD | ⬜ Not started | |
+| 4. Core todo CRUD | ✅ Done | 2026-10-05 |
 | 5. Polish | ⬜ Not started | |
 | 6. Hardening & deploy | ⬜ Not started | |
 
@@ -229,7 +229,8 @@ Each phase ends in a working, runnable state. Don't start the next until the che
 
 ---
 
-### Phase 4 — Core todo CRUD
+### Phase 4 — Core todo CRUD ✅ DONE (2026-10-05)
+
 **Goal:** the actual app. Add, list, toggle, edit, delete.
 
 1. `src/lib/todos/schema.ts` — zod: `createTodoSchema`, `updateTodoSchema`.
@@ -242,6 +243,22 @@ Each phase ends in a working, runnable state. Don't start the next until the che
 8. Toast errors via `sonner` when an action returns `error`.
 
 **Checkpoint:** Full CRUD works. Reload after each action shows persisted state. Opening the app as user B shows none of user A's todos. Network tab shows no client-side fetch of the list.
+
+**Outcome:** Checkpoint passed in Chrome against the dev server. Added three todos (newest on top, counter correct), toggled one done (moved to the bottom, strikethrough, counter decremented), deleted one via the menu, edited one via the dialog with title + notes + a past due date (overdue badge rendered red). Reloaded: everything persisted, and a direct SQL read matched the UI including `updated_at` having advanced. Signed out, created a second account, saw the empty state while the first account's rows still exist. `build`, `typecheck`, `lint` green. The "no client-side fetch" check was not captured by the network tool (tracking started after page load), but the architecture makes it structurally true: the list is only ever read in `(app)/page.tsx` on the server.
+
+**What actually shipped (deviations from the steps above):**
+
+- **One shared schema, not two.** `todoFieldsSchema` (title / notes / due_date) serves both create and update; `todoIdSchema` validates ids. Empty form strings are preprocessed to `undefined`. Limits exported as `TITLE_MAX = 200`, `NOTES_MAX = 2000` and reused as `maxLength` on inputs.
+- **`sortTodos()` lives in `src/lib/todos/sort.ts`**, not `queries.ts`. First build failed because the client list imported the sort helper from the queries module, which pulls `next/headers` into the browser bundle. The pure function now sits in its own file; its order must match the `ORDER BY` in `getTodos()`.
+- **All four optimistic actions**, not just toggle and delete. One reducer handles add / toggle / update / delete; every mutation runs through a single `run()` helper (`startTransition` → apply optimistic → await server action → `toast.error` on failure). The optimistic "add" uses `crypto.randomUUID()` for a temp id and the server render replaces it.
+- **Form submission is client-side**, not `<form action>`. The add form and edit dialog read their own fields and call typed actions (`createTodo({ title })`, `updateTodo(id, fields)`) so the optimistic update and the server call share one code path. `useActionState` is only used on the auth forms.
+- **Actions get the user id from `getClaims().sub`** for the insert; RLS still enforces ownership on every statement.
+- **Edit dialog uses a plain `<textarea>`** styled to match `Input`. shadcn's `textarea` component wasn't added in Phase 1 and this avoided another registry pull.
+- **Due dates are parsed as local dates** (`YYYY-MM-DD` split, not `new Date(str)`) to avoid the off-by-one that UTC parsing gives in positive-offset timezones.
+- **No delete confirmation.** Deliberate for v1: the action is optimistic and fast, and a confirm dialog adds friction. Undo-toast is a Phase 5+ candidate if wanted.
+- **Side request landed in this phase:** `/login` background is green (`bg-green-100` / `dark:bg-green-950`). To scope it to login only, `(auth)/layout.tsx` is now a pass-through and each auth page owns its own centred `<main>`.
+- **Proxy redirect fix** from the Phase 3 security review shipped here (see Phase 6 notes).
+- **Second throwaway account:** `phase4-test@example.com`. Both test accounts can be deleted from the Auth dashboard whenever.
 
 ---
 
@@ -271,6 +288,10 @@ Each phase ends in a working, runnable state. Don't start the next until the che
    - **Audit fields are client-writable.** `created_at` / `updated_at` are in the Insert and Update types, so a crafted request can set them. The trigger already forces `updated_at` on update. Add a migration that also sets `created_at = now()` on insert and ignores client values for both, or revoke column-level insert/update on them from `authenticated`.
    - **`notes` has no length bound.** Add `check (char_length(notes) <= 2000)` alongside the zod limit Phase 4 introduces.
    - **`.mcp.json` feature scope.** The committed Supabase MCP URL enables `account` and `branching` in addition to database/docs/debugging. Trim to what the project actually uses so a clone of the repo doesn't hand a collaborator a wider surface than needed.
+   Phase 3 commit review findings (deferred):
+   - **`emailRedirectTo` is built from the request `Origin` header.** Next.js already rejects Server Action POSTs whose Origin doesn't match Host, and Supabase only honours redirect URLs on its allowlist, so this isn't exploitable as-is. Still, when setting production URLs in step 2, add `NEXT_PUBLIC_SITE_URL` and prefer it over the header.
+   - **Callback route accepts `token_hash` links without a same-browser check.** PKCE `code` links need the verifier cookie from the browser that started sign-up; `token_hash` links don't, so a crafted link could sign a victim into an attacker's account (login CSRF). Mitigation options: drop `token_hash` support if the default Supabase template sends `code`, or show a "You're signed in as X" interstitial after confirmation.
+   - ~~Proxy redirects dropped refreshed session cookies.~~ Fixed in Phase 4 commit: redirects now copy cookies from the Supabase response.
 4. Rate limiting: rely on Supabase Auth's built-in limits for v1; note it as a known gap for todo writes.
 5. Vitest: unit-test the zod schemas and the sort/filter helper. That's all for v1.
 6. Deploy to Vercel. Add the two env vars. Confirm `proxy.ts` runs on the edge without errors.

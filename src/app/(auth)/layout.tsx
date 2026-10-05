@@ -1,7 +1,4 @@
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <main className="flex flex-1 flex-col items-center justify-center p-4">
-      {children}
-    </main>
-  );
+  // Each auth page owns its own full-height wrapper so backgrounds can differ per page.
+  return <>{children}</>;
 }
