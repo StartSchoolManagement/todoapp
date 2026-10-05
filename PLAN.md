@@ -8,8 +8,8 @@
 | Phase | Status | Completed |
 |-------|--------|-----------|
 | 1. Scaffold & tooling | ✅ Done | 2026-10-05 |
-| 2. Supabase project & schema | ✅ Done (2 manual steps pending, see below) | 2026-10-05 |
-| 3. Auth | ⬜ Not started | |
+| 2. Supabase project & schema | ✅ Done | 2026-10-05 |
+| 3. Auth | ✅ Done | 2026-10-05 |
 | 4. Core todo CRUD | ⬜ Not started | |
 | 5. Polish | ⬜ Not started | |
 | 6. Hardening & deploy | ⬜ Not started | |
@@ -194,14 +194,15 @@ Each phase ends in a working, runnable state. Don't start the next until the che
 - **Types generated via MCP** (`generate_typescript_types`), not the CLI. Same output.
 - **Env var renamed:** `.env.example` now uses `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` with the `sb_publishable_...` key. Supabase recommends it over the legacy JWT anon key for new apps and `@supabase/ssr` 0.12 accepts it. Phase 3's client code must read this name.
 
-**Manual steps still pending (Elias, dashboard):**
+**Manual steps (done by Elias before Phase 3):**
 
-1. **Create `.env.local`** in the repo root. Claude's guard hook blocks writing env files, by design. Contents are in the Phase 2 handoff message; the publishable key is also visible in the dashboard under Project Settings → API Keys.
-2. **Auth → Providers → Email → turn off "Confirm email"** for development. Nothing in the MCP connector can change auth settings. Re-enable in Phase 6. Phase 3 will still build the callback route so re-enabling is a toggle, not code.
+1. Created `.env.local` in the repo root with the URL and publishable key.
+2. Turned off "Confirm email" in Auth → Providers → Email. Confirmed indirectly: Phase 3 sign-up returned a session immediately. Re-enable in Phase 6.
 
 ---
 
-### Phase 3 — Auth
+### Phase 3 — Auth ✅ DONE (2026-10-05)
+
 **Goal:** sign up, log in, log out, protected routes.
 
 1. `src/lib/supabase/client.ts` — `createBrowserClient`.
@@ -212,6 +213,19 @@ Each phase ends in a working, runnable state. Don't start the next until the che
 6. `(app)/layout.tsx` calls `supabase.auth.getUser()` server-side; redirects if null; renders header with user email + sign-out button.
 
 **Checkpoint:** Fresh browser → `/` redirects to `/login`. Sign up → lands on `/`. Refresh keeps you in. Sign out → back to `/login`. Two different accounts in two browsers see independent sessions.
+
+**Outcome:** Checkpoint passed, driven through Chrome against the dev server. Unauthenticated `/` → 307 to `/login`. Sign-up landed on `/` with the email in the header. Navigating to `/login` while signed in bounced to `/`. Fresh navigation kept the session. Sign-out returned to `/login` and `/` was protected again. Wrong password showed "Invalid email or password." without revealing whether the account exists. Correct password signed back in. A cookie-less `curl` to `/` was redirected while the browser session was live, which is the "independent sessions" property. `npm run build`, `typecheck`, `lint` all green.
+
+**What actually shipped (deviations from the steps above):**
+
+- **`getClaims()` instead of `getUser()`**, in both the proxy and `(app)/layout.tsx`. This is Supabase's current recommendation: it verifies the JWT signature locally via JWKS instead of a network round-trip to the Auth server on every request. `claims.sub` is the user id, `claims.email` the email.
+- **Callback route handles both link styles.** `/auth/callback?code=` (PKCE, `exchangeCodeForSession`) and `/auth/callback?token_hash=&type=` (`verifyOtp`). Failure redirects to `/login?error=confirmation_failed`, which the login page maps to a human message. Not exercised yet because confirmation is off; Phase 6 tests it for real.
+- **Sign-up passes `emailRedirectTo`** built from the request `origin` header, so confirmation mails point back at whatever host the app is running on.
+- **Proxy sets `Cache-Control: private, no-store`** on pass-through responses so refreshed tokens on `Set-Cookie` never get CDN-cached.
+- **Route group layouts added:** `(auth)/layout.tsx` centres the card; `(app)/layout.tsx` is the auth gate + header. Root `layout.tsx` now mounts `<Toaster />` and has real metadata. The Phase 1 placeholder `src/app/page.tsx` moved to `(app)/page.tsx`.
+- **`.next/types` can go stale** after deleting a route file; `tsc --noEmit` then fails on a phantom import. Running `npm run build` (or `next typegen`) regenerates it. Not a code problem.
+- **Dev server:** Elias already had `npm run dev` running on :3000; Next refuses a second instance for the same project, so testing used that one. It was left running.
+- **Test account:** `phase3-test@example.com` exists in `auth.users`. Throwaway; delete whenever. Credentials are not in the repo.
 
 ---
 
@@ -253,6 +267,10 @@ Each phase ends in a working, runnable state. Don't start the next until the che
 1. Re-enable email confirmation in Supabase; verify the callback route end to end.
 2. Set Supabase Auth **Site URL** and **Redirect URLs** to the production domain.
 3. Run Supabase advisors (security + performance) via dashboard or MCP; fix anything flagged.
+   Also address the Phase 2 commit review findings (deferred, low severity for a single-owner table):
+   - **Audit fields are client-writable.** `created_at` / `updated_at` are in the Insert and Update types, so a crafted request can set them. The trigger already forces `updated_at` on update. Add a migration that also sets `created_at = now()` on insert and ignores client values for both, or revoke column-level insert/update on them from `authenticated`.
+   - **`notes` has no length bound.** Add `check (char_length(notes) <= 2000)` alongside the zod limit Phase 4 introduces.
+   - **`.mcp.json` feature scope.** The committed Supabase MCP URL enables `account` and `branching` in addition to database/docs/debugging. Trim to what the project actually uses so a clone of the repo doesn't hand a collaborator a wider surface than needed.
 4. Rate limiting: rely on Supabase Auth's built-in limits for v1; note it as a known gap for todo writes.
 5. Vitest: unit-test the zod schemas and the sort/filter helper. That's all for v1.
 6. Deploy to Vercel. Add the two env vars. Confirm `proxy.ts` runs on the edge without errors.
